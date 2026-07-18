@@ -65,17 +65,29 @@ struct ClaudeCredentialLoader {
     }
 
     func resolveCredentials() -> ClaudeCredentialResolution {
+        // Claude Code keeps only one source fresh (the macOS Keychain on this
+        // platform) while a leftover `~/.claude/.credentials.json` can hold an
+        // expired token whose refresh token has since been revoked. Reading
+        // file-first would use that stale token and fail its refresh with HTTP
+        // 403, so gather every available source and prefer the one whose access
+        // token is valid longest.
+        var candidates: [ClaudeCredentialResult] = []
+
         if let credentials = loadFromFile() {
-            return ClaudeCredentialResolution(credentials: credentials, issue: nil)
+            candidates.append(credentials)
         }
 
         let keychainResult = loadFromKeychain()
         if case .success(let credentials) = keychainResult, let credentials {
-            return ClaudeCredentialResolution(credentials: credentials, issue: nil)
+            candidates.append(credentials)
         }
 
         if let credentials = loadFromEnvironment() {
-            return ClaudeCredentialResolution(credentials: credentials, issue: nil)
+            candidates.append(credentials)
+        }
+
+        if let best = freshestCredential(candidates) {
+            return ClaudeCredentialResolution(credentials: best, issue: nil)
         }
 
         switch keychainResult {
@@ -83,6 +95,16 @@ struct ClaudeCredentialLoader {
             return ClaudeCredentialResolution(credentials: nil, issue: nil)
         case .failure(let issue):
             return ClaudeCredentialResolution(credentials: nil, issue: issue)
+        }
+    }
+
+    func freshestCredential(_ candidates: [ClaudeCredentialResult]) -> ClaudeCredentialResult? {
+        // Largest expiresAt wins. A credential with no known expiry (e.g. an
+        // environment token) sorts last unless it is the only candidate.
+        candidates.max { lhs, rhs in
+            let lhsExpiry = lhs.oauth.expiresAt ?? -.greatestFiniteMagnitude
+            let rhsExpiry = rhs.oauth.expiresAt ?? -.greatestFiniteMagnitude
+            return lhsExpiry < rhsExpiry
         }
     }
 

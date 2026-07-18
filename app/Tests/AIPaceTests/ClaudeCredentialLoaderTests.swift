@@ -39,6 +39,49 @@ struct ClaudeCredentialLoaderTests {
     }
 
     @Test
+    func resolveCredentialsPrefersFreshestSourceOverStaleFile() throws {
+        let homeDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: homeDirectory) }
+
+        let credentialsURL = homeDirectory.appendingPathComponent(".claude/.credentials.json")
+        try FileManager.default.createDirectory(at: credentialsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(
+            """
+            {
+              "claudeAiOauth": {
+                "accessToken": "stale-file-token",
+                "refreshToken": "revoked-refresh",
+                "expiresAt": 1000,
+                "subscriptionType": "team"
+              }
+            }
+            """.utf8
+        ).write(to: credentialsURL)
+
+        let keychainCredentials = ClaudeCredentialResult(
+            oauth: ClaudeOAuthCredentials(
+                accessToken: "fresh-keychain-token",
+                refreshToken: "live-refresh",
+                expiresAt: 9_999_999_999_999,
+                subscriptionType: "team"
+            ),
+            source: .keychain,
+            fullData: [:]
+        )
+
+        let loader = ClaudeCredentialLoader(
+            homeDirectory: homeDirectory,
+            environment: [:],
+            keychainLoadOverride: .success(keychainCredentials)
+        )
+
+        let resolution = loader.resolveCredentials()
+
+        #expect(resolution.credentials?.source == .keychain)
+        #expect(resolution.credentials?.oauth.accessToken == "fresh-keychain-token")
+    }
+
+    @Test
     func resolveCredentialsFallsBackToEnvironment() throws {
         let homeDirectory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: homeDirectory) }
