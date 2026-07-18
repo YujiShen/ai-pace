@@ -227,6 +227,12 @@ struct ProviderAccount: Identifiable {
     let active: Bool
     let detail: String?
     var windows: [UsageWindow]
+
+    /// The window to show on the account's single row (prefers weekly, which is
+    /// currently the only Codex window).
+    var primaryWindow: UsageWindow? {
+        windows.first { $0.kind == .weekly } ?? windows.first
+    }
 }
 
 struct ProviderSnapshot {

@@ -192,26 +192,29 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         popover.behavior = .semitransient
         popover.animates = false
         popover.delegate = self
-        let size = popoverSize()
-        popover.contentSize = size
+        // Placeholder height only; the hosting controller reports its SwiftUI
+        // content's fitting size via `.preferredContentSize`, so the popover
+        // grows and shrinks to fit whatever rows are present (Fable, per-account
+        // Codex rows, ...) with no hard-coded per-row math.
+        popover.contentSize = NSSize(width: popoverWidth, height: 300)
 
         let hostingController = NSHostingController(
-            rootView: MenuContentView(store: store, openSettings: openSettings, popoverHeight: size.height)
+            rootView: MenuContentView(store: store, openSettings: openSettings)
         )
-        hostingController.sizingOptions = []
-        hostingController.view.frame = NSRect(origin: .zero, size: size)
-        hostingController.preferredContentSize = size
+        hostingController.sizingOptions = [.preferredContentSize]
 
         popoverHostingController = hostingController
         popover.contentViewController = hostingController
     }
 
     private func bindStore() {
+        // The popover content is bound to `store` (an ObservableObject) and the
+        // hosting controller self-sizes, so only the menu-bar label needs a
+        // manual refresh here.
         Publishers.CombineLatest(store.$claude, store.$codex)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
                 self?.updateButtonTitle()
-                self?.updatePopoverLayout()
             }
             .store(in: &cancellables)
 
@@ -219,7 +222,6 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateButtonTitle()
-                self?.updatePopoverLayout()
             }
             .store(in: &cancellables)
     }
@@ -293,45 +295,6 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSPopoverDelegate {
         button.imagePosition = .noImage
         button.title = StatusItemLabelView.defaultFallbackText
         statusItem?.length = NSStatusItem.variableLength
-    }
-
-    private func updatePopoverLayout() {
-        guard let hostingController = popoverHostingController else {
-            return
-        }
-
-        let size = popoverSize()
-        guard popover.contentSize != size || hostingController.preferredContentSize != size else {
-            return
-        }
-
-        popover.contentSize = size
-        hostingController.preferredContentSize = size
-        hostingController.view.setFrameSize(size)
-        hostingController.rootView = MenuContentView(
-            store: store,
-            openSettings: openSettings,
-            popoverHeight: size.height
-        )
-    }
-
-    private func popoverSize() -> NSSize {
-        NSSize(width: popoverWidth, height: popoverHeight())
-    }
-
-    private func popoverHeight() -> CGFloat {
-        Self.popoverHeight(forVisibleSnapshotCount: store.visibleSnapshots.count)
-    }
-
-    static func popoverHeight(forVisibleSnapshotCount count: Int) -> CGFloat {
-        switch count {
-        case 0:
-            return 220
-        case 1:
-            return 250
-        default:
-            return 380
-        }
     }
 
     static func statusItemLength(forContentWidth width: CGFloat) -> CGFloat {

@@ -6,7 +6,6 @@ import SwiftUI
 struct MenuContentView: View {
     @ObservedObject var store: UsageStore
     let openSettings: () -> Void
-    let popoverHeight: CGFloat
     @AppStorage("selectedTheme") private var selectedThemeID = AppTheme.defaultTheme.id
     @AppStorage(AppTheme.customClaudeAccentDefaultsKey) private var customClaudeAccentHex = ""
     @AppStorage(AppTheme.customCodexAccentDefaultsKey) private var customCodexAccentHex = ""
@@ -94,7 +93,7 @@ struct MenuContentView: View {
             .padding(.bottom, 14)
         }
         .frame(width: popoverWidth)
-        .frame(height: popoverHeight, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
         .transaction { transaction in
             transaction.animation = nil
         }
@@ -206,14 +205,20 @@ private struct ProviderCard: View {
             }
 
             if isMultiAccount {
+                // One row per account: the account alias is the row label, so
+                // each account is a single line aligned like the Claude rows.
                 ForEach(snapshot.accounts) { account in
-                    AccountSection(
-                        account: account,
-                        provider: snapshot.provider,
-                        store: store,
-                        accent: accent,
-                        lang: lang
-                    )
+                    if let window = account.primaryWindow {
+                        UsageRow(
+                            window: window,
+                            provider: snapshot.provider,
+                            store: store,
+                            accent: accent,
+                            lang: lang,
+                            showsBell: account.active,
+                            labelText: account.active ? "\(account.name ?? "") ★" : (account.name ?? "")
+                        )
+                    }
                 }
             } else {
                 // Usage rows: one per window the provider currently reports.
@@ -228,51 +233,6 @@ private struct ProviderCard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(colorScheme == .dark ? 0.035 : 0.06))
         )
-    }
-}
-
-// MARK: - Account Section (multi-account provider)
-
-private struct AccountSection: View {
-    let account: ProviderAccount
-    let provider: ProviderKind
-    @ObservedObject var store: UsageStore
-    let accent: Color
-    let lang: AppLanguage
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                if account.active {
-                    Image(systemName: "star.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(accent)
-                }
-                Text(account.name ?? "")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(account.active ? .primary : .secondary)
-                Spacer()
-                if let detail = account.detail {
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
-            }
-
-            ForEach(account.windows) { window in
-                // Only the active account exposes a notification toggle: its
-                // windows are the ones the menu bar and notifications track.
-                UsageRow(
-                    window: window,
-                    provider: provider,
-                    store: store,
-                    accent: accent,
-                    lang: lang,
-                    showsBell: account.active
-                )
-            }
-        }
     }
 }
 
@@ -306,6 +266,7 @@ private struct UsageRow: View {
     let accent: Color
     let lang: AppLanguage
     var showsBell: Bool = true
+    var labelText: String? = nil
     @AppStorage("popoverDisplayMode") private var popoverDisplayModeID = PopoverDisplayMode.usage.rawValue
 
     private var key: UsageWindowKey { UsageWindowKey(provider: provider, kind: window.kind) }
@@ -344,7 +305,7 @@ private struct UsageRow: View {
                         .padding(.leading, 4)
                 }
 
-                Text(loc.windowLabel(window.kind))
+                Text(labelText ?? loc.windowLabel(window.kind))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
 
