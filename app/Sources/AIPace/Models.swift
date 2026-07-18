@@ -218,18 +218,39 @@ struct UsageWindow: Identifiable {
     }
 }
 
+/// One account within a provider (used for Codex multi-account). The active
+/// account's `windows` are also promoted to the snapshot's top-level `windows`
+/// so the menu-bar label and single-account code paths stay unchanged.
+struct ProviderAccount: Identifiable {
+    let id: String
+    let name: String?
+    let active: Bool
+    let detail: String?
+    var windows: [UsageWindow]
+}
+
 struct ProviderSnapshot {
     let provider: ProviderKind
     /// The windows the provider currently reports, in display order. A window
     /// is present only when the provider actually returns it, so absent
-    /// windows (e.g. Codex's retired 5h) simply do not appear.
+    /// windows (e.g. Codex's retired 5h) simply do not appear. For a
+    /// multi-account provider these mirror the active account's windows.
     var windows: [UsageWindow]
     var detail: String?
+    /// Populated only for multi-account providers (Codex via cma); empty for
+    /// single-account providers, which render `windows` directly.
+    var accounts: [ProviderAccount]
 
-    init(provider: ProviderKind, windows: [UsageWindow], detail: String?) {
+    init(
+        provider: ProviderKind,
+        windows: [UsageWindow],
+        detail: String?,
+        accounts: [ProviderAccount] = []
+    ) {
         self.provider = provider
         self.windows = windows
         self.detail = detail
+        self.accounts = accounts
     }
 
     /// Back-compat initializer for the fixed 5h + weekly shape. Retained so

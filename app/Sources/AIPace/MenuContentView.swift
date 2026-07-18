@@ -173,9 +173,13 @@ private struct ProviderCard: View {
     let lang: AppLanguage
     @Environment(\.colorScheme) private var colorScheme
 
+    private var isMultiAccount: Bool { !snapshot.accounts.isEmpty }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            let insight = WeeklyPacingInsight(window: snapshot.weekly, lang: lang)
+            // Weekly-pacing insight in the header only makes sense for a single
+            // account; multi-account cards show pace per account row.
+            let insight = isMultiAccount ? nil : WeeklyPacingInsight(window: snapshot.weekly, lang: lang)
 
             // Provider header
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -194,16 +198,28 @@ private struct ProviderCard: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                if let detail = snapshot.detail {
+                if !isMultiAccount, let detail = snapshot.detail {
                     Text(detail)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            // Usage rows: one per window the provider currently reports.
-            ForEach(snapshot.windows) { window in
-                UsageRow(window: window, provider: snapshot.provider, store: store, accent: accent, lang: lang)
+            if isMultiAccount {
+                ForEach(snapshot.accounts) { account in
+                    AccountSection(
+                        account: account,
+                        provider: snapshot.provider,
+                        store: store,
+                        accent: accent,
+                        lang: lang
+                    )
+                }
+            } else {
+                // Usage rows: one per window the provider currently reports.
+                ForEach(snapshot.windows) { window in
+                    UsageRow(window: window, provider: snapshot.provider, store: store, accent: accent, lang: lang)
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -212,6 +228,51 @@ private struct ProviderCard: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(colorScheme == .dark ? 0.035 : 0.06))
         )
+    }
+}
+
+// MARK: - Account Section (multi-account provider)
+
+private struct AccountSection: View {
+    let account: ProviderAccount
+    let provider: ProviderKind
+    @ObservedObject var store: UsageStore
+    let accent: Color
+    let lang: AppLanguage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if account.active {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(accent)
+                }
+                Text(account.name ?? "")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(account.active ? .primary : .secondary)
+                Spacer()
+                if let detail = account.detail {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            ForEach(account.windows) { window in
+                // Only the active account exposes a notification toggle: its
+                // windows are the ones the menu bar and notifications track.
+                UsageRow(
+                    window: window,
+                    provider: provider,
+                    store: store,
+                    accent: accent,
+                    lang: lang,
+                    showsBell: account.active
+                )
+            }
+        }
     }
 }
 
@@ -244,6 +305,7 @@ private struct UsageRow: View {
     @ObservedObject var store: UsageStore
     let accent: Color
     let lang: AppLanguage
+    var showsBell: Bool = true
     @AppStorage("popoverDisplayMode") private var popoverDisplayModeID = PopoverDisplayMode.usage.rawValue
 
     private var key: UsageWindowKey { UsageWindowKey(provider: provider, kind: window.kind) }
@@ -257,24 +319,30 @@ private struct UsageRow: View {
         VStack(alignment: .leading, spacing: 5) {
             // Top tier: stats
             HStack(spacing: 6) {
-                Button {
-                    guard !notificationsDisabledInSystem else {
-                        return
+                if showsBell {
+                    Button {
+                        guard !notificationsDisabledInSystem else {
+                            return
+                        }
+                        Task { await store.setRefreshNotificationsEnabled(!notifyEnabled, for: key) }
+                    } label: {
+                        Image(systemName: notificationsDisabledInSystem ? "bell.slash" : (notifyEnabled ? "bell.fill" : "bell"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(notificationsDisabledInSystem ? .tertiary : (notifyEnabled ? .primary : .tertiary))
+                            .symbolRenderingMode(.hierarchical)
+                            .frame(width: 16, height: 16)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
                     }
-                    Task { await store.setRefreshNotificationsEnabled(!notifyEnabled, for: key) }
-                } label: {
-                    Image(systemName: notificationsDisabledInSystem ? "bell.slash" : (notifyEnabled ? "bell.fill" : "bell"))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(notificationsDisabledInSystem ? .tertiary : (notifyEnabled ? .primary : .tertiary))
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(width: 16, height: 16)
+                    .buttonStyle(.plain)
+                    .disabled(notificationsDisabledInSystem)
+                    .pointerOnHover()
+                    .padding(.leading, 4)
+                } else {
+                    Color.clear
                         .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
+                        .padding(.leading, 4)
                 }
-                .buttonStyle(.plain)
-                .disabled(notificationsDisabledInSystem)
-                .pointerOnHover()
-                .padding(.leading, 4)
 
                 Text(loc.windowLabel(window.kind))
                     .font(.system(size: 14, weight: .medium))

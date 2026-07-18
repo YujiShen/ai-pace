@@ -33,15 +33,21 @@ final class UsageStore: ObservableObject {
     private let notificationSoundDefaultsKey = "notificationSound"
 
     init(
-        claudeProbe: any ProviderSnapshotFetching = ClaudeProbe(),
-        codexProbe: any ProviderSnapshotFetching = CodexProbe(),
+        claudeProbe: (any ProviderSnapshotFetching)? = nil,
+        codexProbe: (any ProviderSnapshotFetching)? = nil,
         notificationManager: any NotificationManaging = NotificationManager(),
         launchAtStartupManager: any LaunchAtStartupManaging = LaunchAtStartupManager(),
         userDefaults: UserDefaults = .standard,
         startRefreshLoop: Bool = true
     ) {
+        // By default AIPace is a view over `ai-usage --json`; the native probes
+        // remain as a fallback when the CLI is not installed. A single shared
+        // runner means one `ai-usage` process feeds both providers per refresh.
+        let runner = AIUsageRunner()
         self.claudeProbe = claudeProbe
+            ?? AIUsageProbe(provider: .claude, runner: runner, fallback: ClaudeProbe())
         self.codexProbe = codexProbe
+            ?? AIUsageProbe(provider: .codex, runner: runner, fallback: CodexProbe())
         self.notificationManager = notificationManager
         self.launchAtStartupManager = launchAtStartupManager
         self.userDefaults = userDefaults
