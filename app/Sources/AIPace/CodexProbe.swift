@@ -4,21 +4,9 @@ struct CodexProbe: Sendable {
     func fetch() async -> ProviderSnapshot {
         do {
             let limits = try await fetchRateLimits()
-            let (fiveHour, weekly) = classifyWindows(limits)
             return ProviderSnapshot(
                 provider: .codex,
-                fiveHour: UsageWindow(
-                    kind: .fiveHour,
-                    usedPercentage: fiveHour?.usedPercent,
-                    resetsAt: fiveHour?.resetsAt,
-                    message: fiveHour == nil ? "No 5h limit returned." : nil
-                ),
-                weekly: UsageWindow(
-                    kind: .weekly,
-                    usedPercentage: weekly?.usedPercent,
-                    resetsAt: weekly?.resetsAt,
-                    message: weekly == nil ? "No weekly limit returned." : nil
-                ),
+                windows: windows(from: limits),
                 detail: limits.planType.map { "Plan: \($0)" }
             )
         } catch {
@@ -152,6 +140,34 @@ struct CodexProbe: Sendable {
         place(limits.primary, positional: .fiveHour)
         place(limits.secondary, positional: .weekly)
         return (fiveHour, weekly)
+    }
+
+    /// Build the display windows, including only those Codex actually returns.
+    /// With the 5h limit retired, Codex reports only a weekly window, so no
+    /// empty 5h slot is emitted.
+    func windows(from limits: CodexRateLimits) -> [UsageWindow] {
+        let (fiveHour, weekly) = classifyWindows(limits)
+        var windows: [UsageWindow] = []
+        if let fiveHour {
+            windows.append(UsageWindow(
+                kind: .fiveHour,
+                usedPercentage: fiveHour.usedPercent,
+                resetsAt: fiveHour.resetsAt,
+                message: nil
+            ))
+        }
+        if let weekly {
+            windows.append(UsageWindow(
+                kind: .weekly,
+                usedPercentage: weekly.usedPercent,
+                resetsAt: weekly.resetsAt,
+                message: nil
+            ))
+        }
+        if windows.isEmpty {
+            windows.append(UsageWindow(kind: .weekly, usedPercentage: nil, resetsAt: nil, message: "No usage limits returned."))
+        }
+        return windows
     }
 
     func numericValue(_ value: Any?) -> Double? {

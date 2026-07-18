@@ -71,6 +71,39 @@ struct CodexProbeTests {
     }
 
     @Test
+    func windowsOmitsFiveHourWhenCodexReturnsOnlyWeekly() {
+        let probe = CodexProbe()
+        let limits = CodexRateLimits(
+            primary: CodexRateLimitWindow(usedPercent: 9, resetsAt: nil, windowMinutes: 10_080),
+            secondary: nil,
+            planType: "plus"
+        )
+
+        let windows = probe.windows(from: limits)
+
+        #expect(windows.count == 1)
+        #expect(windows.first?.kind == .weekly)
+        #expect(windows.first?.usedPercentage == 9)
+        #expect(!windows.contains { $0.kind == .fiveHour })
+    }
+
+    @Test
+    func windowsIncludesBothWhenCodexReturnsFiveHourAndWeekly() {
+        let probe = CodexProbe()
+        let limits = CodexRateLimits(
+            primary: CodexRateLimitWindow(usedPercent: 40, resetsAt: nil, windowMinutes: 300),
+            secondary: CodexRateLimitWindow(usedPercent: 12, resetsAt: nil, windowMinutes: 10_080),
+            planType: "plus"
+        )
+
+        let windows = probe.windows(from: limits)
+
+        #expect(windows.count == 2)
+        #expect(windows.contains { $0.kind == .fiveHour })
+        #expect(windows.contains { $0.kind == .weekly })
+    }
+
+    @Test
     func classifyWindowsFallsBackToPositionWhenDurationMissing() {
         let probe = CodexProbe()
         // Older Codex builds omit windowDurationMins: keep primary=5h, secondary=weekly.

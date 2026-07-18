@@ -69,6 +69,49 @@ struct ClaudeProbeTests {
     }
 
     @Test
+    func scopedWindowsBuildsModelScopedWindowsAndIgnoresUnscopedLimits() {
+        let probe = ClaudeProbe()
+        let limits = [
+            ClaudeLimit(percent: 30, resetsAt: nil, scope: nil, isActive: true),
+            ClaudeLimit(
+                percent: 12,
+                resetsAt: "2026-07-24T23:59:59Z",
+                scope: ClaudeLimitScope(model: ClaudeLimitModel(displayName: "Fable")),
+                isActive: false
+            ),
+        ]
+
+        let windows = probe.scopedWindows(from: limits)
+
+        #expect(windows.count == 1)
+        #expect(windows.first?.kind == .scoped("Fable"))
+        #expect(windows.first?.usedPercentage == 12)
+    }
+
+    @Test
+    func claudeWindowsOmitsAbsentFiveHourAndIncludesScoped() {
+        let probe = ClaudeProbe()
+        let usage = ClaudeUsageResponse(
+            fiveHour: nil,
+            sevenDay: ClaudeQuotaData(utilization: 5, resetsAt: "2026-07-24T23:59:59Z"),
+            limits: [
+                ClaudeLimit(
+                    percent: 0,
+                    resetsAt: "2026-07-24T23:59:59Z",
+                    scope: ClaudeLimitScope(model: ClaudeLimitModel(displayName: "Fable")),
+                    isActive: false
+                ),
+            ]
+        )
+
+        let windows = probe.claudeWindows(from: usage)
+
+        #expect(!windows.contains { $0.kind == .fiveHour })
+        #expect(windows.contains { $0.kind == .weekly })
+        #expect(windows.contains { $0.kind == .scoped("Fable") })
+    }
+
+    @Test
     func fetchReportsLoggedInWhenCredentialsCannotBeRead() async throws {
         let homeDirectory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: homeDirectory) }

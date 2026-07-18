@@ -43,9 +43,40 @@ enum ProviderDisplayName {
     }
 }
 
-enum UsageWindowKind: String {
-    case fiveHour = "5h"
-    case weekly = "Week"
+enum UsageWindowKind: Hashable, Sendable {
+    case fiveHour
+    case weekly
+    /// A model-scoped window (e.g. a per-model weekly cap like "Fable"), keyed
+    /// by the model's display name. These appear only while the provider
+    /// actually reports them.
+    case scoped(String)
+
+    /// Stable identifier used for notification storage keys and view identity.
+    /// Kept as "5h"/"week" for the primary windows so existing persisted
+    /// notification preferences survive the dynamic-window change.
+    var storageKey: String {
+        switch self {
+        case .fiveHour:
+            return "5h"
+        case .weekly:
+            return "week"
+        case .scoped(let name):
+            return "scoped-\(name.lowercased())"
+        }
+    }
+
+    /// Human-facing label used where a window kind is shown verbatim
+    /// (notifications). Localized rendering lives in `Loc.windowLabel`.
+    var displayLabel: String {
+        switch self {
+        case .fiveHour:
+            return "5h"
+        case .weekly:
+            return "Week"
+        case .scoped(let name):
+            return name
+        }
+    }
 }
 
 enum AgentAvailability: Equatable {
@@ -170,7 +201,7 @@ struct UsageWindowKey: Hashable, Sendable {
     let kind: UsageWindowKind
 
     var storageKey: String {
-        "\(provider.rawValue.lowercased())-\(kind.rawValue.lowercased())"
+        "\(provider.rawValue.lowercased())-\(kind.storageKey)"
     }
 }
 
@@ -180,7 +211,7 @@ struct UsageWindow: Identifiable {
     var resetsAt: Date?
     var message: String?
 
-    var id: String { kind.rawValue }
+    var id: String { kind.storageKey }
 
     static func placeholder(_ kind: UsageWindowKind, message: String = "Loading…") -> UsageWindow {
         UsageWindow(kind: kind, usedPercentage: nil, resetsAt: nil, message: message)
@@ -189,9 +220,38 @@ struct UsageWindow: Identifiable {
 
 struct ProviderSnapshot {
     let provider: ProviderKind
-    var fiveHour: UsageWindow
-    var weekly: UsageWindow
+    /// The windows the provider currently reports, in display order. A window
+    /// is present only when the provider actually returns it, so absent
+    /// windows (e.g. Codex's retired 5h) simply do not appear.
+    var windows: [UsageWindow]
     var detail: String?
+
+    init(provider: ProviderKind, windows: [UsageWindow], detail: String?) {
+        self.provider = provider
+        self.windows = windows
+        self.detail = detail
+    }
+
+    /// Back-compat initializer for the fixed 5h + weekly shape. Retained so
+    /// existing call sites and tests keep constructing both primary windows.
+    init(provider: ProviderKind, fiveHour: UsageWindow, weekly: UsageWindow, detail: String?) {
+        self.init(provider: provider, windows: [fiveHour, weekly], detail: detail)
+    }
+
+    /// The 5h window if the provider currently reports one.
+    var fiveHourWindow: UsageWindow? { windows.first { $0.kind == .fiveHour } }
+    /// The weekly window if the provider currently reports one.
+    var weeklyWindow: UsageWindow? { windows.first { $0.kind == .weekly } }
+
+    /// Non-optional accessors that read an absent window as empty. Convenient
+    /// for consumers (insight, status derivation) that tolerate missing data;
+    /// presentation code that must hide absent windows iterates `windows`.
+    var fiveHour: UsageWindow {
+        fiveHourWindow ?? UsageWindow(kind: .fiveHour, usedPercentage: nil, resetsAt: nil, message: nil)
+    }
+    var weekly: UsageWindow {
+        weeklyWindow ?? UsageWindow(kind: .weekly, usedPercentage: nil, resetsAt: nil, message: nil)
+    }
 
     static func loading(_ provider: ProviderKind) -> ProviderSnapshot {
         ProviderSnapshot(

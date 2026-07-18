@@ -9,6 +9,7 @@ struct LocalizationAndFormattingTests {
 
         #expect(korean.windowLabel(.fiveHour) == "5시간")
         #expect(korean.windowLabel(.weekly) == "주간")
+        #expect(korean.windowLabel(.scoped("Fable")) == "Fable")
         #expect(korean.displayMessage("Loading…") == "로딩 중…")
         #expect(korean.colors == "색상")
         #expect(korean.reset == "재설정")
@@ -44,6 +45,27 @@ struct LocalizationAndFormattingTests {
         #expect(StatusItemFormatter.text(prefix: "Cx", snapshot: insightSnapshot, mode: .insight) == "Cx +10%")
         #expect(StatusItemFormatter.text(prefix: "Cx", snapshot: insightSnapshot, mode: .usageAndInsight) == "Cx 5/40 +10%")
         #expect(StatusItemFormatter.text(prefix: "Cx", snapshot: insightSnapshot, mode: .remainingAndInsight) == "Cx 95/60 +10%")
+    }
+
+    @Test
+    func compactLabelHidesAbsentFiveHourWindow() {
+        // Codex now reports only a weekly window: the compact label shows just
+        // that value, not "--/22".
+        let codex = ProviderSnapshot(provider: .codex, windows: [makeWindow(.weekly, used: 22)], detail: nil)
+        #expect(StatusItemFormatter.compactPair(for: codex, remaining: false) == "22")
+        #expect(StatusItemFormatter.text(prefix: "Cx", snapshot: codex, mode: .usage) == "Cx 22")
+
+        // Both present keeps the "5h/week" pair.
+        let claude = makeSnapshot(.claude, fiveHourUsed: 25, weeklyUsed: 60)
+        #expect(StatusItemFormatter.compactPair(for: claude, remaining: false) == "25/60")
+
+        // Scoped windows (e.g. Fable) never appear in the compact label.
+        let withScoped = ProviderSnapshot(
+            provider: .claude,
+            windows: [makeWindow(.fiveHour, used: 25), makeWindow(.weekly, used: 60), makeWindow(.scoped("Fable"), used: 3)],
+            detail: nil
+        )
+        #expect(StatusItemFormatter.compactPair(for: withScoped, remaining: false) == "25/60")
     }
 
     @Test

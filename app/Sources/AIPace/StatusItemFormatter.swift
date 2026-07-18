@@ -16,21 +16,35 @@ enum StatusItemFormatter {
         return String(Int(remaining.rounded()))
     }
 
+    /// Compact "5h/week" (or just "week" when there is no 5h window) using the
+    /// windows the provider actually reports. Model-scoped windows (e.g. Fable)
+    /// are intentionally omitted from the compact label; they live in the
+    /// popover only.
+    static func compactPair(for snapshot: ProviderSnapshot, remaining: Bool) -> String {
+        let parts = [snapshot.fiveHourWindow, snapshot.weeklyWindow].compactMap { window -> String? in
+            guard let window else {
+                return nil
+            }
+            return remaining ? compactRemainingValue(for: window) : compactValue(for: window)
+        }
+        return parts.isEmpty ? "--" : parts.joined(separator: "/")
+    }
+
     static func text(prefix: String, snapshot: ProviderSnapshot, mode: MenuBarDisplayMode) -> String {
         switch mode {
         case .usage:
-            return "\(prefix) \(compactValue(for: snapshot.fiveHour))/\(compactValue(for: snapshot.weekly))"
+            return "\(prefix) \(compactPair(for: snapshot, remaining: false))"
         case .remaining:
-            return "\(prefix) \(compactRemainingValue(for: snapshot.fiveHour))/\(compactRemainingValue(for: snapshot.weekly))"
+            return "\(prefix) \(compactPair(for: snapshot, remaining: true))"
         case .insight:
             let insight = WeeklyPacing.formattedDelta(for: snapshot.weekly) ?? "--"
             return "\(prefix) \(insight)"
         case .usageAndInsight:
-            let usage = "\(compactValue(for: snapshot.fiveHour))/\(compactValue(for: snapshot.weekly))"
+            let usage = compactPair(for: snapshot, remaining: false)
             let insight = WeeklyPacing.formattedDelta(for: snapshot.weekly) ?? "--"
             return "\(prefix) \(usage) \(insight)"
         case .remainingAndInsight:
-            let remaining = "\(compactRemainingValue(for: snapshot.fiveHour))/\(compactRemainingValue(for: snapshot.weekly))"
+            let remaining = compactPair(for: snapshot, remaining: true)
             let insight = WeeklyPacing.formattedDelta(for: snapshot.weekly) ?? "--"
             return "\(prefix) \(remaining) \(insight)"
         }

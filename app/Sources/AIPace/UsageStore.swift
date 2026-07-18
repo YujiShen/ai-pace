@@ -65,7 +65,7 @@ final class UsageStore: ObservableObject {
     var menuBarTitle: String {
         let claudeName = ProviderDisplayName.displayName(for: .claude, userDefaults: userDefaults)
         let codexName = ProviderDisplayName.displayName(for: .codex, userDefaults: userDefaults)
-        return "\(claudeName) \(compactValue(for: claude.fiveHour))/\(compactValue(for: claude.weekly))  \(codexName) \(compactValue(for: codex.fiveHour))/\(compactValue(for: codex.weekly))"
+        return "\(claudeName) \(StatusItemFormatter.compactPair(for: claude, remaining: false))  \(codexName) \(StatusItemFormatter.compactPair(for: codex, remaining: false))"
     }
 
     var visibleSnapshots: [ProviderSnapshot] {
@@ -149,13 +149,6 @@ final class UsageStore: ObservableObject {
         }
     }
 
-    private func compactValue(for window: UsageWindow) -> String {
-        guard let used = window.usedPercentage else {
-            return "--"
-        }
-        return String(Int(used.rounded()))
-    }
-
     func refreshNotificationsEnabled(for key: UsageWindowKey) -> Bool {
         refreshNotificationKeys.contains(key.storageKey)
     }
@@ -167,11 +160,11 @@ final class UsageStore: ObservableObject {
 
     func agentStatus(for provider: ProviderKind) -> AgentStatus {
         let snapshot = snapshot(for: provider)
-        if snapshot.fiveHour.usedPercentage != nil || snapshot.weekly.usedPercentage != nil {
+        if snapshot.windows.contains(where: { $0.usedPercentage != nil }) {
             return AgentStatus(provider: provider, availability: .available, message: nil)
         }
 
-        let message = snapshot.fiveHour.message ?? snapshot.weekly.message
+        let message = snapshot.windows.compactMap { $0.message }.first
         guard let message else {
             return AgentStatus(provider: provider, availability: .loading, message: nil)
         }
@@ -222,16 +215,16 @@ final class UsageStore: ObservableObject {
     }
 
     private func notifyIfWindowRefreshed(previous: ProviderSnapshot, current: ProviderSnapshot) async {
-        await notifyIfWindowRefreshed(
-            key: UsageWindowKey(provider: current.provider, kind: .fiveHour),
-            previous: previous.fiveHour,
-            current: current.fiveHour
-        )
-        await notifyIfWindowRefreshed(
-            key: UsageWindowKey(provider: current.provider, kind: .weekly),
-            previous: previous.weekly,
-            current: current.weekly
-        )
+        for window in current.windows {
+            guard let previousWindow = previous.windows.first(where: { $0.kind == window.kind }) else {
+                continue
+            }
+            await notifyIfWindowRefreshed(
+                key: UsageWindowKey(provider: current.provider, kind: window.kind),
+                previous: previousWindow,
+                current: window
+            )
+        }
     }
 
     private func notifyIfWindowRefreshed(key: UsageWindowKey, previous: UsageWindow, current: UsageWindow) async {
@@ -280,17 +273,17 @@ final class UsageStore: ObservableObject {
         current: ProviderSnapshot,
         preservedFailureCount: Int
     ) -> Bool {
-        let hasCurrentData = current.fiveHour.usedPercentage != nil || current.weekly.usedPercentage != nil
+        let hasCurrentData = current.windows.contains { $0.usedPercentage != nil }
         guard !hasCurrentData else {
             return false
         }
 
-        let hadPreviousData = previous.fiveHour.usedPercentage != nil || previous.weekly.usedPercentage != nil
+        let hadPreviousData = previous.windows.contains { $0.usedPercentage != nil }
         guard hadPreviousData else {
             return false
         }
 
-        let message = (current.fiveHour.message ?? current.weekly.message ?? "").lowercased()
+        let message = (current.windows.compactMap { $0.message }.first ?? "").lowercased()
         if message.contains("http 429") || message.contains("rate limit") {
             return true
         }

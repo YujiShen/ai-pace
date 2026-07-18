@@ -55,18 +55,7 @@ struct ClaudeProbe: Sendable {
             }
             return ProviderSnapshot(
                 provider: .claude,
-                fiveHour: UsageWindow(
-                    kind: .fiveHour,
-                    usedPercentage: usage.fiveHour?.utilization,
-                    resetsAt: parseISODate(usage.fiveHour?.resetsAt),
-                    message: usage.fiveHour == nil ? "No 5h limit returned." : nil
-                ),
-                weekly: UsageWindow(
-                    kind: .weekly,
-                    usedPercentage: usage.sevenDay?.utilization,
-                    resetsAt: parseISODate(usage.sevenDay?.resetsAt),
-                    message: usage.sevenDay == nil ? "No weekly limit returned." : nil
-                ),
+                windows: claudeWindows(from: usage),
                 detail: detailText(from: credentials, accountInfo: accountInfo)
             )
         } catch {
@@ -173,6 +162,55 @@ struct ClaudeProbe: Sendable {
         }
     }
 
+    /// Build the display windows from a usage response, including only the
+    /// windows the API actually reports. The 5h and weekly windows come from
+    /// the stable top-level fields; model-scoped windows (e.g. "Fable") come
+    /// from `limits[]` and appear only while the API returns that scope.
+    func claudeWindows(from usage: ClaudeUsageResponse) -> [UsageWindow] {
+        var windows: [UsageWindow] = []
+        if let fiveHour = usage.fiveHour {
+            windows.append(UsageWindow(
+                kind: .fiveHour,
+                usedPercentage: fiveHour.utilization,
+                resetsAt: parseISODate(fiveHour.resetsAt),
+                message: nil
+            ))
+        }
+        if let sevenDay = usage.sevenDay {
+            windows.append(UsageWindow(
+                kind: .weekly,
+                usedPercentage: sevenDay.utilization,
+                resetsAt: parseISODate(sevenDay.resetsAt),
+                message: nil
+            ))
+        }
+        windows.append(contentsOf: scopedWindows(from: usage.limits))
+        if windows.isEmpty {
+            windows.append(UsageWindow(kind: .weekly, usedPercentage: nil, resetsAt: nil, message: "No usage limits returned."))
+        }
+        return windows
+    }
+
+    /// Model-scoped windows (per-model weekly caps) surfaced in `limits[]`. Each
+    /// entry with a model display name becomes a `.scoped(name)` window.
+    func scopedWindows(from limits: [ClaudeLimit]?) -> [UsageWindow] {
+        guard let limits else {
+            return []
+        }
+        return limits.compactMap { limit in
+            guard let name = limit.scope?.model?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else {
+                return nil
+            }
+            return UsageWindow(
+                kind: .scoped(name),
+                usedPercentage: limit.percent,
+                resetsAt: parseISODate(limit.resetsAt),
+                message: nil
+            )
+        }
+    }
+
     func parseISODate(_ isoString: String?) -> Date? {
         guard let isoString else {
             return nil
@@ -240,10 +278,40 @@ struct ClaudeAuthStatus: Decodable, Sendable {
 struct ClaudeUsageResponse: Decodable, Sendable {
     let fiveHour: ClaudeQuotaData?
     let sevenDay: ClaudeQuotaData?
+    // `var` so the synthesized memberwise initializer defaults it to nil,
+    // keeping existing `ClaudeUsageResponse(fiveHour:sevenDay:)` call sites valid.
+    var limits: [ClaudeLimit]?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
+        case limits
+    }
+}
+
+struct ClaudeLimit: Decodable, Sendable {
+    let percent: Double?
+    let resetsAt: String?
+    let scope: ClaudeLimitScope?
+    let isActive: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case percent
+        case resetsAt = "resets_at"
+        case scope
+        case isActive = "is_active"
+    }
+}
+
+struct ClaudeLimitScope: Decodable, Sendable {
+    let model: ClaudeLimitModel?
+}
+
+struct ClaudeLimitModel: Decodable, Sendable {
+    let displayName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
     }
 }
 

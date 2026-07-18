@@ -60,8 +60,8 @@ final class NotificationManager: NotificationManaging {
     }
 
     func sendRefreshNotification(for key: UsageWindowKey, sound: NotificationSoundOption) async {
-        let title = "\(key.provider.rawValue) \(key.kind.rawValue) refreshed"
-        let body = "A new \(key.kind.rawValue) usage period is available."
+        let title = "\(key.provider.rawValue) \(key.kind.displayLabel) refreshed"
+        let body = "A new \(key.kind.displayLabel) usage period is available."
 
         if prefersUserNotifications {
             let content = UNMutableNotificationContent()

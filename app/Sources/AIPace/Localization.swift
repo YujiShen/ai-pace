@@ -481,6 +481,8 @@ struct Loc {
             case .korean: return "주간"
             case .chineseSimplified: return "周"
             }
+        case .scoped(let name):
+            return name
         }
     }
 

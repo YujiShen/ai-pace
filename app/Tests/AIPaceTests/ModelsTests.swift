@@ -29,6 +29,23 @@ struct ModelsTests {
     }
 
     @Test
+    func usageWindowKeyStorageKeyIsStableForScopedWindows() {
+        #expect(UsageWindowKey(provider: .claude, kind: .fiveHour).storageKey == "claude-5h")
+        #expect(UsageWindowKey(provider: .claude, kind: .weekly).storageKey == "claude-week")
+        #expect(UsageWindowKey(provider: .claude, kind: .scoped("Fable")).storageKey == "claude-scoped-fable")
+    }
+
+    @Test
+    func providerSnapshotExposesOnlyReportedWindows() {
+        let snapshot = ProviderSnapshot(provider: .codex, windows: [makeWindow(.weekly, used: 22)], detail: nil)
+
+        #expect(snapshot.fiveHourWindow == nil)
+        #expect(snapshot.weeklyWindow?.usedPercentage == 22)
+        // Non-optional accessor reads an absent window as empty.
+        #expect(snapshot.fiveHour.usedPercentage == nil)
+    }
+
+    @Test
     func agentAvailabilityPopoverVisibilityMatchesExpectedStates() {
         #expect(AgentAvailability.loading.showsInPopover)
         #expect(AgentAvailability.available.showsInPopover)

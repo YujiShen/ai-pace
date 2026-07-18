@@ -201,9 +201,10 @@ private struct ProviderCard: View {
                 }
             }
 
-            // Usage rows
-            UsageRow(window: snapshot.fiveHour, provider: snapshot.provider, store: store, accent: accent, lang: lang)
-            UsageRow(window: snapshot.weekly, provider: snapshot.provider, store: store, accent: accent, lang: lang)
+            // Usage rows: one per window the provider currently reports.
+            ForEach(snapshot.windows) { window in
+                UsageRow(window: window, provider: snapshot.provider, store: store, accent: accent, lang: lang)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
