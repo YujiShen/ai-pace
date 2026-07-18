@@ -4,19 +4,20 @@ struct CodexProbe: Sendable {
     func fetch() async -> ProviderSnapshot {
         do {
             let limits = try await fetchRateLimits()
+            let (fiveHour, weekly) = classifyWindows(limits)
             return ProviderSnapshot(
                 provider: .codex,
                 fiveHour: UsageWindow(
                     kind: .fiveHour,
-                    usedPercentage: limits.primary?.usedPercent,
-                    resetsAt: limits.primary?.resetsAt,
-                    message: limits.primary == nil ? "No 5h limit returned." : nil
+                    usedPercentage: fiveHour?.usedPercent,
+                    resetsAt: fiveHour?.resetsAt,
+                    message: fiveHour == nil ? "No 5h limit returned." : nil
                 ),
                 weekly: UsageWindow(
                     kind: .weekly,
-                    usedPercentage: limits.secondary?.usedPercent,
-                    resetsAt: limits.secondary?.resetsAt,
-                    message: limits.secondary == nil ? "No weekly limit returned." : nil
+                    usedPercentage: weekly?.usedPercent,
+                    resetsAt: weekly?.resetsAt,
+                    message: weekly == nil ? "No weekly limit returned." : nil
                 ),
                 detail: limits.planType.map { "Plan: \($0)" }
             )
@@ -110,7 +111,47 @@ struct CodexProbe: Sendable {
             return nil
         }
         let resetsAt = numericValue(window["resetsAt"]).map(Date.init(timeIntervalSince1970:))
-        return CodexRateLimitWindow(usedPercent: usedPercent, resetsAt: resetsAt)
+        let windowMinutes = numericValue(window["windowDurationMins"])
+            ?? numericValue(window["windowMinutes"])
+        return CodexRateLimitWindow(
+            usedPercent: usedPercent,
+            resetsAt: resetsAt,
+            windowMinutes: windowMinutes
+        )
+    }
+
+    // Codex historically returned a 5h `primary` and a weekly `secondary`, but
+    // after the 5h limit was retired `primary` now carries the weekly window
+    // (`windowDurationMins: 10080`) and `secondary` is null. Classify by the
+    // reported duration so each window lands in the right slot regardless of
+    // position; fall back to positional intent when a duration is absent (older
+    // Codex builds).
+    func classifyWindows(
+        _ limits: CodexRateLimits
+    ) -> (fiveHour: CodexRateLimitWindow?, weekly: CodexRateLimitWindow?) {
+        var fiveHour: CodexRateLimitWindow?
+        var weekly: CodexRateLimitWindow?
+
+        func place(_ window: CodexRateLimitWindow?, positional: UsageWindowKind) {
+            guard let window else {
+                return
+            }
+            let kind: UsageWindowKind
+            if let minutes = window.windowMinutes {
+                kind = minutes <= 360 ? .fiveHour : .weekly
+            } else {
+                kind = positional
+            }
+            if kind == .fiveHour, fiveHour == nil {
+                fiveHour = window
+            } else if weekly == nil {
+                weekly = window
+            }
+        }
+
+        place(limits.primary, positional: .fiveHour)
+        place(limits.secondary, positional: .weekly)
+        return (fiveHour, weekly)
     }
 
     func numericValue(_ value: Any?) -> Double? {
@@ -138,6 +179,7 @@ struct CodexRateLimits {
 struct CodexRateLimitWindow: Sendable, Equatable {
     let usedPercent: Double
     let resetsAt: Date?
+    var windowMinutes: Double?
 }
 
 func writeJSONLine(_ object: [String: Any], to handle: FileHandle) throws {

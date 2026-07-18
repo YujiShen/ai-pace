@@ -27,6 +27,66 @@ struct CodexProbeTests {
     }
 
     @Test
+    func parseWindowReadsReportedDuration() {
+        let probe = CodexProbe()
+        let window = probe.parseWindow([
+            "usedPercent": 9,
+            "windowDurationMins": 10_080,
+            "resetsAt": 1_784_949_880,
+        ])
+
+        #expect(window?.windowMinutes == 10_080)
+    }
+
+    @Test
+    func classifyWindowsRoutesWeeklyPrimaryToWeekly() {
+        let probe = CodexProbe()
+        // Codex retired the 5h window: `primary` now carries the weekly window.
+        let limits = CodexRateLimits(
+            primary: CodexRateLimitWindow(usedPercent: 9, resetsAt: nil, windowMinutes: 10_080),
+            secondary: nil,
+            planType: "plus"
+        )
+
+        let (fiveHour, weekly) = probe.classifyWindows(limits)
+
+        #expect(fiveHour == nil)
+        #expect(weekly?.usedPercent == 9)
+        #expect(weekly?.windowMinutes == 10_080)
+    }
+
+    @Test
+    func classifyWindowsUsesDurationForBothWindows() {
+        let probe = CodexProbe()
+        let limits = CodexRateLimits(
+            primary: CodexRateLimitWindow(usedPercent: 40, resetsAt: nil, windowMinutes: 300),
+            secondary: CodexRateLimitWindow(usedPercent: 12, resetsAt: nil, windowMinutes: 10_080),
+            planType: "plus"
+        )
+
+        let (fiveHour, weekly) = probe.classifyWindows(limits)
+
+        #expect(fiveHour?.usedPercent == 40)
+        #expect(weekly?.usedPercent == 12)
+    }
+
+    @Test
+    func classifyWindowsFallsBackToPositionWhenDurationMissing() {
+        let probe = CodexProbe()
+        // Older Codex builds omit windowDurationMins: keep primary=5h, secondary=weekly.
+        let limits = CodexRateLimits(
+            primary: CodexRateLimitWindow(usedPercent: 30, resetsAt: nil, windowMinutes: nil),
+            secondary: CodexRateLimitWindow(usedPercent: 8, resetsAt: nil, windowMinutes: nil),
+            planType: "plus"
+        )
+
+        let (fiveHour, weekly) = probe.classifyWindows(limits)
+
+        #expect(fiveHour?.usedPercent == 30)
+        #expect(weekly?.usedPercent == 8)
+    }
+
+    @Test
     func readResponseReturnsMatchingPayload() async throws {
         let stream = AsyncStream<String> { continuation in
             continuation.yield("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ignored\":true}}")
