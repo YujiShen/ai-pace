@@ -131,6 +131,36 @@ actor AIUsageRunner {
             return output
         }
     }
+
+    /// Switch the active Codex account via `ai-usage activate <selector>`.
+    /// Returns true on success (exit 0).
+    static func activate(_ selector: String, timeout: TimeInterval = 30) async -> Bool {
+        do {
+            _ = try await ProcessRunner.run(
+                executable: "ai-usage",
+                arguments: ["activate", selector],
+                timeout: timeout
+            )
+            return true
+        } catch ProcessRunnerError.executableNotFound {
+            let path = ("~/hub/config/dotfiles/bin/ai-usage" as NSString).expandingTildeInPath
+            guard FileManager.default.isExecutableFile(atPath: path) else {
+                return false
+            }
+            let output = try? await Task.detached(priority: .utility) {
+                try ProcessRunner.runSync(
+                    executable: path,
+                    arguments: ["activate", selector],
+                    input: nil,
+                    timeout: timeout,
+                    currentDirectory: nil
+                )
+            }.value
+            return output != nil
+        } catch {
+            return false
+        }
+    }
 }
 
 // MARK: - Probes

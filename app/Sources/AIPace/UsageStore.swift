@@ -107,6 +107,15 @@ final class UsageStore: ObservableObject {
         await notifyIfWindowRefreshed(previous: previousCodex, current: resolvedCodex)
     }
 
+    /// Switch the active Codex account (via `ai-usage activate`), then refresh
+    /// so the popover reflects the new active account.
+    func activateCodexAccount(_ selector: String) async {
+        guard !selector.isEmpty, await AIUsageRunner.activate(selector) else {
+            return
+        }
+        await refresh()
+    }
+
     func setAutoRefreshInterval(_ interval: AutoRefreshInterval) {
         guard autoRefreshInterval != interval else {
             return

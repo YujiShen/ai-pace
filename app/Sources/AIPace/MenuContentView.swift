@@ -215,8 +215,11 @@ private struct ProviderCard: View {
                             store: store,
                             accent: accent,
                             lang: lang,
-                            showsBell: account.active,
-                            labelText: account.active ? "\(account.name ?? "") ★" : (account.name ?? "")
+                            showsBell: false,
+                            labelText: account.name,
+                            star: StarConfig(active: account.active) {
+                                Task { await store.activateCodexAccount(account.name ?? "") }
+                            }
                         )
                     }
                 }
@@ -259,6 +262,11 @@ private struct WeeklyPacingInsight {
 
 // MARK: - Usage Row (Two-Tier Layout)
 
+struct StarConfig {
+    let active: Bool
+    let onActivate: () -> Void
+}
+
 private struct UsageRow: View {
     let window: UsageWindow
     let provider: ProviderKind
@@ -267,6 +275,7 @@ private struct UsageRow: View {
     let lang: AppLanguage
     var showsBell: Bool = true
     var labelText: String? = nil
+    var star: StarConfig? = nil
     @AppStorage("popoverDisplayMode") private var popoverDisplayModeID = PopoverDisplayMode.usage.rawValue
 
     private var key: UsageWindowKey { UsageWindowKey(provider: provider, kind: window.kind) }
@@ -280,7 +289,24 @@ private struct UsageRow: View {
         VStack(alignment: .leading, spacing: 5) {
             // Top tier: stats
             HStack(spacing: 6) {
-                if showsBell {
+                if let star {
+                    Button {
+                        if !star.active {
+                            star.onActivate()
+                        }
+                    } label: {
+                        Image(systemName: star.active ? "star.fill" : "star")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(star.active ? accent : Color.secondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(star.active)
+                    .pointerOnHover()
+                    .padding(.leading, 4)
+                    .help(star.active ? "Active account" : "Switch to this account")
+                } else if showsBell {
                     Button {
                         guard !notificationsDisabledInSystem else {
                             return
