@@ -211,11 +211,8 @@ private struct ProviderCard: View {
                     if let window = account.primaryWindow {
                         UsageRow(
                             window: window,
-                            provider: snapshot.provider,
-                            store: store,
                             accent: accent,
                             lang: lang,
-                            showsBell: false,
                             labelText: account.name,
                             star: StarConfig(active: account.active) {
                                 Task { await store.activateCodexAccount(account.name ?? "") }
@@ -226,7 +223,7 @@ private struct ProviderCard: View {
             } else {
                 // Usage rows: one per window the provider currently reports.
                 ForEach(snapshot.windows) { window in
-                    UsageRow(window: window, provider: snapshot.provider, store: store, accent: accent, lang: lang)
+                    UsageRow(window: window, accent: accent, lang: lang)
                 }
             }
         }
@@ -269,18 +266,12 @@ struct StarConfig {
 
 private struct UsageRow: View {
     let window: UsageWindow
-    let provider: ProviderKind
-    @ObservedObject var store: UsageStore
     let accent: Color
     let lang: AppLanguage
-    var showsBell: Bool = true
     var labelText: String? = nil
     var star: StarConfig? = nil
     @AppStorage("popoverDisplayMode") private var popoverDisplayModeID = PopoverDisplayMode.usage.rawValue
 
-    private var key: UsageWindowKey { UsageWindowKey(provider: provider, kind: window.kind) }
-    private var notifyEnabled: Bool { store.refreshNotificationsEnabled(for: key) }
-    private var notificationsDisabledInSystem: Bool { store.notificationsDisabledInSystem }
     private var loc: Loc { Loc(lang: lang) }
     private var popoverMode: PopoverDisplayMode { PopoverDisplayMode(rawValue: popoverDisplayModeID) ?? .usage }
     private let barLeadingInset: CGFloat = 30
@@ -306,26 +297,8 @@ private struct UsageRow: View {
                     .pointerOnHover()
                     .padding(.leading, 4)
                     .help(star.active ? "Active account" : "Switch to this account")
-                } else if showsBell {
-                    Button {
-                        guard !notificationsDisabledInSystem else {
-                            return
-                        }
-                        Task { await store.setRefreshNotificationsEnabled(!notifyEnabled, for: key) }
-                    } label: {
-                        Image(systemName: notificationsDisabledInSystem ? "bell.slash" : (notifyEnabled ? "bell.fill" : "bell"))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(notificationsDisabledInSystem ? .tertiary : (notifyEnabled ? .primary : .tertiary))
-                            .symbolRenderingMode(.hierarchical)
-                            .frame(width: 16, height: 16)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(notificationsDisabledInSystem)
-                    .pointerOnHover()
-                    .padding(.leading, 4)
                 } else {
+                    // Leading spacer keeps rows aligned with account (star) rows.
                     Color.clear
                         .frame(width: 20, height: 20)
                         .padding(.leading, 4)
